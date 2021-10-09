@@ -1,0 +1,111 @@
+//===----------------------------------------------------------------------===//
+//
+// Copyright (c) 2014 - 2017 Apple Inc. and the Swift project authors
+// Copyright (c) 2021 John Scott
+// Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See LICENSE.txt for license information
+//
+//===----------------------------------------------------------------------===//
+
+// Generate async completion handlers
+%{
+
+continuationTypes = [
+  ('Unsafe', 'unsafe', '', ''),
+  ('Checked', 'checked', 'function: String = #function, ', 'function: function, '),
+]
+
+}%
+% for continuationType, phrase, passedPrefix, usedPrefix in continuationTypes:
+
+
+/// Suspends the current task,
+/// then calls the given closure with a ${phrase} `Result` continuation handler for the current task.
+///
+/// - Parameters:
+///   - function: A string identifying the declaration that is the notional
+///     source for the continuation, used to identify the continuation in
+///     runtime diagnostics related to misuse of this continuation.
+///   - body: A closure that takes a `Result` completion handler parameter.
+///     You must call the completion handler exactly once.
+@available(iOS 15.0.0, *)
+func with${continuationType}ThrowingCompletionHandler<T, E: Error>(${passedPrefix}_ body: (_ resultHandler: @escaping (Result<T, E>) -> ()) -> ()) async throws -> T {
+    return try await with${continuationType}ThrowingContinuation(${usedPrefix}{ (continuation: ${continuationType}Continuation<T, Error>) in
+        body({ (result: Result<T, E>) in
+            continuation.resume(with: result)
+        })
+    })
+}
+
+/// Suspends the current task,
+/// then calls the given closure with a ${phrase} continuation handler for the current task.
+///
+/// - Parameters:
+///   - function: A string identifying the declaration that is the notional
+///     source for the continuation, used to identify the continuation in
+///     runtime diagnostics related to misuse of this continuation.
+///   - response: A optional type that can return a value even if the function throws.
+///   - body: A closure that takes a completion handler parameter.
+///     You must call the completion handler exactly once.
+@available(iOS 15.0.0, *)
+func with${continuationType}ThrowingCompletionHandler<T, E: Error>(${passedPrefix}response: inout T?, _ body: (_ responseHandler: @escaping (T?, E?) -> ()) -> ()) async throws {
+    let result : (T?,E?) = await with${continuationType}CompletionHandler(${usedPrefix}body)
+    response = result.0
+    if let error = result.1 {
+        throw error
+    }
+}
+
+/// Suspends the current task,
+/// then calls the given closure with a ${phrase} continuation handler for the current task.
+///
+/// - Parameters:
+///   - function: A string identifying the declaration that is the notional
+///     source for the continuation, used to identify the continuation in
+///     runtime diagnostics related to misuse of this continuation.
+///   - body: A closure that takes a completion handler parameter.
+///     You must call the completion handler exactly once.
+@available(iOS 15.0.0, *)
+func with${continuationType}ThrowingCompletionHandler<T, E: Error>(${passedPrefix}_ body: (_ responseHandler: @escaping (T?, E?) -> ()) -> ()) async throws -> T {
+    return try await with${continuationType}ThrowingContinuation(${usedPrefix}{ (continuation: ${continuationType}Continuation<T, Error>) in
+        body({
+            if $1 != nil {
+                continuation.resume(throwing: $1!)
+            } else {
+                continuation.resume(returning: $0!)
+            }
+        })
+    })
+}
+%   for arity in range(1,7):
+%     typeParams = [chr(ord("T") + i) for i in range(arity)]
+%     tupleT = ",".join(typeParams)
+%     returnTupleT = tupleT
+%     resumeParams = ", ".join("${}".format(i) for i in range(0, arity))
+%     if arity > 1:
+%       returnTupleT = "(" + returnTupleT + ")"
+%       resumeParams = "(" + resumeParams + ")"
+%     end
+
+/// Suspends the current task,
+/// then calls the given closure with a ${phrase} continuation handler for the current task.
+///
+/// - Parameters:
+///   - function: A string identifying the declaration that is the notional
+///     source for the continuation, used to identify the continuation in
+///     runtime diagnostics related to misuse of this continuation.
+///   - body: A closure that takes a completion handler parameter.
+///     You must call the completion handler exactly once.
+@available(iOS 15.0.0, *)
+func with${continuationType}CompletionHandler<${tupleT}>(${passedPrefix}_ body: (_ completionHandler: @escaping (${tupleT}) -> ()) -> ()) async -> ${returnTupleT} {
+    return await with${continuationType}Continuation(${usedPrefix}{ (continuation: ${continuationType}Continuation<${returnTupleT}, Never>) in
+        body { continuation.resume(returning: ${resumeParams}) }
+    })
+}
+%   end
+% end
+
+// ${'Local Variables'}:
+// eval: (read-only-mode 1)
+// End:
